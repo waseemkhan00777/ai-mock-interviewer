@@ -1,11 +1,11 @@
 import React from "react";
 import Header from "./_components/header";
 
-const DashboardLayout = ({ children }: any) => {
+const DashboardLayout = ({ children }: never) => {
   return (
     <div>
       <Header />
-      {children}
+      <div className="mx-5 md:mx-20 lg:mx-36">{children}</div>
     </div>
   );
 };
