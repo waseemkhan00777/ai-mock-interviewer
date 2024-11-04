@@ -18,10 +18,17 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Loader2 } from "lucide-react";
+import { v4 as uuidv4 } from "uuid";
+import moment from "moment";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { chatSession } from "@/utils/gemini-ai-modal";
+import { db } from "@/utils/db";
+import { MockInterview } from "@/utils/schema";
+import { useUser } from "@clerk/nextjs";
 
 const formSchema = z.object({
   jobPosition: z.string().min(5, {
@@ -36,7 +43,10 @@ const formSchema = z.object({
 });
 
 const AddInterviewModal = () => {
+  const { user } = useUser();
   const [open, setOpen] = useState(false);
+  const [jsonResponse, setJsonResponse] = useState([]);
+
   const toggleOpenModal = useCallback(() => {
     setOpen(prev => !prev);
   }, []);
@@ -50,9 +60,44 @@ const AddInterviewModal = () => {
     },
   });
 
-  const onSubmit = useCallback((values: z.infer<typeof formSchema>) => {
-    console.log(values);
-  }, []);
+  const { isSubmitting } = form.formState;
+
+  const onSubmit = useCallback(
+    async (values: z.infer<typeof formSchema>) => {
+      const { jobPosition, jobDescription, jobExperience } = values;
+      const inputPrompt = `Job position: ${jobPosition}, Job description: ${jobDescription}, Years of experience: ${jobExperience}, Depends on job position, job description and years of experience give us ${process.env.NEXT_PUBLIC_AI_INTERVIEW_QUESTIONS_LIMIT} interview question along with Answer in json format`;
+      // get data from gemini api
+      const result = await chatSession.sendMessage(inputPrompt);
+      const mockJsonResp = result.response
+        .text()
+        .replace("```json", "")
+        .replace("```", "");
+      setJsonResponse(JSON.parse(mockJsonResp));
+      console.log(mockJsonResp);
+
+      if (mockJsonResp) {
+        // set response to state
+        // save data to DB
+        const response = await db
+          .insert(MockInterview)
+          .values({
+            mockId: uuidv4(),
+            jsonMockResp: mockJsonResp,
+            jobPosition,
+            jobDescription,
+            jobExperience,
+            createdBy: user?.primaryEmailAddress?.emailAddress ?? "",
+            createdAt: moment().format("DD-MM-yyyy"),
+          })
+          .returning({
+            mockId: MockInterview.mockId,
+          });
+
+        console.log("inserted data id: ", response);
+      }
+    },
+    [user?.primaryEmailAddress?.emailAddress],
+  );
 
   return (
     <div>
@@ -138,10 +183,19 @@ const AddInterviewModal = () => {
                       variant="ghost"
                       type="button"
                       onClick={toggleOpenModal}
+                      disabled={isSubmitting}
                     >
                       Cancel
                     </Button>
-                    <Button type="submit">Start Interview</Button>
+                    <Button type="submit">
+                      {isSubmitting ? (
+                        <>
+                          Generating <Loader2 className="animate-spin" />
+                        </>
+                      ) : (
+                        "Start Interview"
+                      )}
+                    </Button>
                   </div>
                 </form>
               </Form>
